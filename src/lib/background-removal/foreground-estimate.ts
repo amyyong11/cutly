@@ -13,6 +13,9 @@ const SMALL_SIZE = 32;
 const SMALL_ITERATIONS = 10;
 const BIG_ITERATIONS = 2;
 
+// Byte value -> 0-1 float, rounded to float32 as the solver's arrays store it.
+const UNIT = Float32Array.from({ length: 256 }, (_, v) => v / 255);
+
 function resizeNearest(
   src: Float32Array<ArrayBuffer>,
   w0: number,
@@ -34,6 +37,33 @@ function resizeNearest(
   return out;
 }
 
+// Nearest-neighbor samples of `rgba` at w x h, as 0-1 floats: RGB when
+// `alpha` is false, otherwise the alpha channel. Sampling straight from the
+// byte buffer avoids holding full-resolution float copies of the image, which
+// matters for memory on large photos.
+function sampleRgba(
+  rgba: Buffer,
+  width: number,
+  height: number,
+  w: number,
+  h: number,
+  alpha: boolean
+): Float32Array<ArrayBuffer> {
+  const channels = alpha ? 1 : 3;
+  const offset = alpha ? 3 : 0;
+  const out = new Float32Array(w * h * channels);
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(height - 1, Math.floor((y * height) / h));
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(width - 1, Math.floor((x * width) / w));
+      const si = (sy * width + sx) * 4 + offset;
+      const di = (y * w + x) * channels;
+      for (let c = 0; c < channels; c++) out[di + c] = UNIT[rgba[si + c]];
+    }
+  }
+  return out;
+}
+
 /**
  * Replaces the RGB of every partially transparent pixel in `rgba` with its
  * estimated pure foreground color. Fully opaque pixels are left untouched.
@@ -44,16 +74,13 @@ export function decontaminateEdges(
   height: number
 ): void {
   const pixelCount = width * height;
-  const image = new Float32Array(pixelCount * 3);
-  const alpha = new Float32Array(pixelCount);
   let hasPartial = false;
   for (let i = 0; i < pixelCount; i++) {
-    image[i * 3] = rgba[i * 4] / 255;
-    image[i * 3 + 1] = rgba[i * 4 + 1] / 255;
-    image[i * 3 + 2] = rgba[i * 4 + 2] / 255;
     const a = rgba[i * 4 + 3];
-    alpha[i] = a / 255;
-    if (a > 0 && a < 255) hasPartial = true;
+    if (a > 0 && a < 255) {
+      hasPartial = true;
+      break;
+    }
   }
   if (!hasPartial) return;
 
@@ -67,8 +94,10 @@ export function decontaminateEdges(
     const w = Math.max(1, Math.round(width ** (level / levels)));
     const h = Math.max(1, Math.round(height ** (level / levels)));
 
-    const img = level === levels ? image : resizeNearest(image, width, height, w, h, 3);
-    const a = level === levels ? alpha : resizeNearest(alpha, width, height, w, h, 1);
+    // At full resolution the image is read straight from `rgba`.
+    const full = level === levels;
+    const img = full ? null : sampleRgba(rgba, width, height, w, h, false);
+    const a = full ? null : sampleRgba(rgba, width, height, w, h, true);
     fg = resizeNearest(fg, prevW, prevH, w, h, 3);
     bg = resizeNearest(bg, prevW, prevH, w, h, 3);
     prevW = w;
@@ -82,16 +111,16 @@ export function decontaminateEdges(
         const yDown = y < h - 1 ? y + 1 : h - 1;
         for (let x = 0; x < w; x++) {
           const i = y * w + x;
-          const a0 = a[i];
+          const a0 = a ? a[i] : UNIT[rgba[i * 4 + 3]];
           const a1 = 1 - a0;
 
           // At full resolution, opaque and empty pixels have a trivial
           // answer; skipping them is what keeps large images fast.
-          if (level === levels && (a0 === 1 || a0 === 0)) {
+          if (full && (a0 === 1 || a0 === 0)) {
             const target = a0 === 1 ? fg : bg;
-            target[i * 3] = img[i * 3];
-            target[i * 3 + 1] = img[i * 3 + 1];
-            target[i * 3 + 2] = img[i * 3 + 2];
+            target[i * 3] = UNIT[rgba[i * 4]];
+            target[i * 3 + 1] = UNIT[rgba[i * 4 + 1]];
+            target[i * 3 + 2] = UNIT[rgba[i * 4 + 2]];
             continue;
           }
 
@@ -109,7 +138,8 @@ export function decontaminateEdges(
           let b0 = 0, b1 = 0, b2 = 0;
 
           for (const j of neighbors) {
-            const da = REGULARIZATION + GRADIENT_WEIGHT * Math.abs(a0 - a[j]);
+            const aj = a ? a[j] : UNIT[rgba[j * 4 + 3]];
+            const da = REGULARIZATION + GRADIENT_WEIGHT * Math.abs(a0 - aj);
             a00 += da;
             a11 += da;
             f0 += da * fg[j * 3];
@@ -120,9 +150,9 @@ export function decontaminateEdges(
             b2 += da * bg[j * 3 + 2];
           }
 
-          const r = img[i * 3];
-          const g = img[i * 3 + 1];
-          const b = img[i * 3 + 2];
+          const r = img ? img[i * 3] : UNIT[rgba[i * 4]];
+          const g = img ? img[i * 3 + 1] : UNIT[rgba[i * 4 + 1]];
+          const b = img ? img[i * 3 + 2] : UNIT[rgba[i * 4 + 2]];
           f0 += a0 * r; f1 += a0 * g; f2 += a0 * b;
           b0 += a1 * r; b1 += a1 * g; b2 += a1 * b;
 

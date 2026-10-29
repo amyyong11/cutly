@@ -1,3 +1,5 @@
+import { postImage } from "./transfer";
+
 export interface SelectPoint {
   x: number;
   y: number;
@@ -41,12 +43,7 @@ export class SmartSelect {
     this.failed = false;
     const session = (async () => {
       const image = await (await fetch(this.imageUrl)).blob();
-      const formData = new FormData();
-      formData.append("image", image);
-      const response = await fetch("/api/segment", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await postImage("/api/segment", image);
       if (!response.ok) throw new Error("Could not prepare smart select");
       const { sessionId } = await response.json();
       return sessionId as string;

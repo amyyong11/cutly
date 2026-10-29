@@ -1,3 +1,4 @@
+import "@/lib/transformers-env";
 import { AutoModel, AutoProcessor, RawImage, PreTrainedModel, Processor } from "@huggingface/transformers";
 import sharp from "sharp";
 import { closeAlphaGaps } from "../alpha-refine";

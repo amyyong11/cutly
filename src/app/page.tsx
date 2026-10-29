@@ -8,6 +8,7 @@ import { ResultViewer } from "@/components/ResultViewer";
 import { SampleImages } from "@/components/SampleImages";
 import { ThumbnailStrip } from "@/components/ThumbnailStrip";
 import { getErrorMessage, validateImageFile } from "@/lib/image-utils";
+import { postImage, readImageResponse } from "@/lib/transfer";
 import type { Background } from "@/lib/compose";
 
 interface Item {
@@ -31,17 +32,12 @@ function errorMessageFor(code: unknown): string {
 }
 
 async function requestBackgroundRemoval(file: File): Promise<Blob> {
-  const formData = new FormData();
-  formData.append("image", file);
-  const response = await fetch("/api/remove-background", {
-    method: "POST",
-    body: formData,
-  });
+  const response = await postImage("/api/remove-background", file);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(errorMessageFor(data.error));
   }
-  return response.blob();
+  return readImageResponse(response);
 }
 
 export default function Home() {

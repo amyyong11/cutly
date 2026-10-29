@@ -53,6 +53,10 @@ Get a token at [replicate.com/account/api-tokens](https://replicate.com/account/
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploying to Vercel
+
+Vercel limits function requests and responses to 4.5MB. To handle larger photos at full quality, connect a [Vercel Blob](https://vercel.com/docs/vercel-blob) store to the project (which sets `BLOB_READ_WRITE_TOKEN`). Images and results over 4MB are then transferred through Blob and deleted right after; smaller ones go through the API directly.
+
 ## Architecture
 
 - **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS

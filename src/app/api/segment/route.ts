@@ -5,6 +5,7 @@ import {
   segmentAt,
   type SegmentPoint,
 } from "@/lib/segmentation/sam";
+import { isTransferBlobUrl, takeUploadedImage } from "@/lib/blob-transfer";
 import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_SIZE } from "@/lib/constants";
 
 // The first request downloads and loads the SAM model.
@@ -12,23 +13,29 @@ export const maxDuration = 120;
 
 // Two calls share this route:
 //   multipart { image }            -> { sessionId }  (encodes the image once)
+//   JSON { blobUrl }               -> { sessionId }  (same, for large images)
 //   JSON { sessionId, points }     -> PNG mask       (one per tap)
 export async function POST(request: NextRequest) {
   try {
-    if (request.headers.get("content-type")?.includes("application/json")) {
-      return await handleSegment(request);
+    if (!request.headers.get("content-type")?.includes("application/json")) {
+      const file = (await request.formData()).get("image") as File | null;
+      return await handleCreateSession(file);
     }
-    return await handleCreateSession(request);
+    const body = await request.json().catch(() => null);
+    if (body?.blobUrl !== undefined) {
+      const file = isTransferBlobUrl(body.blobUrl)
+        ? await takeUploadedImage(body.blobUrl)
+        : null;
+      return await handleCreateSession(file);
+    }
+    return await handleSegment(body);
   } catch (err) {
     console.error("segment failed:", err);
     return NextResponse.json({ error: "processing_failed" }, { status: 500 });
   }
 }
 
-async function handleCreateSession(request: NextRequest) {
-  const formData = await request.formData();
-  const file = formData.get("image") as File | null;
-
+async function handleCreateSession(file: File | null) {
   if (!file) {
     return NextResponse.json({ error: "No image provided" }, { status: 400 });
   }
@@ -52,8 +59,9 @@ async function handleCreateSession(request: NextRequest) {
   return NextResponse.json({ sessionId });
 }
 
-async function handleSegment(request: NextRequest) {
-  const body = await request.json().catch(() => null);
+async function handleSegment(
+  body: { sessionId?: unknown; points?: unknown } | null
+) {
   const sessionId = body?.sessionId;
   const points = body?.points;
 

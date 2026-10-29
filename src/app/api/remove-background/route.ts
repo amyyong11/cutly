@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { removeBackground } from "@/lib/background-removal";
+import {
+  imageResponse,
+  isTransferBlobUrl,
+  takeUploadedImage,
+} from "@/lib/blob-transfer";
 import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_SIZE } from "@/lib/constants";
 
 // The default (BiRefNet) provider loads a large ONNX session on first use,
@@ -9,8 +14,16 @@ export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("image") as File | null;
+    // Large images arrive as a Vercel Blob URL (JSON); others as multipart.
+    let file: File | null;
+    if (request.headers.get("content-type")?.includes("application/json")) {
+      const body = await request.json().catch(() => null);
+      file = isTransferBlobUrl(body?.blobUrl)
+        ? await takeUploadedImage(body.blobUrl)
+        : null;
+    } else {
+      file = (await request.formData()).get("image") as File | null;
+    }
 
     if (!file) {
       return NextResponse.json(
@@ -45,13 +58,7 @@ export async function POST(request: NextRequest) {
       mimeType: file.type,
     });
 
-    return new NextResponse(new Uint8Array(result.imageBuffer), {
-      status: 200,
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "no-store",
-      },
-    });
+    return await imageResponse(result.imageBuffer, "image/png");
   } catch (err) {
     console.error("remove-background failed:", err);
     return NextResponse.json(

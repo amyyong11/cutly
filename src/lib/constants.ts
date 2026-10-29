@@ -8,7 +8,15 @@ export const ACCEPTED_MIME_TYPES = [
 export const ACCEPTED_EXTENSIONS = ["PNG", "JPG", "JPEG", "WebP"];
 
 export const MAX_UPLOAD_SIZE =
-  parseInt(process.env.MAX_UPLOAD_SIZE || "10485760", 10) || 10485760;
+  parseInt(process.env.MAX_UPLOAD_SIZE || "52428800", 10) || 52428800;
+
+// Vercel rejects function request and response bodies over 4.5MB. Images and
+// results larger than this travel through Vercel Blob instead (leaving
+// headroom for multipart overhead).
+export const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+// Pathname prefix for the short-lived blobs used for those transfers.
+export const BLOB_PREFIX = "cutly-tmp/";
 
 export const BRUSH_SIZES = [10, 20, 36, 60, 100] as const;
 
