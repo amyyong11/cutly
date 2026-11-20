@@ -10,6 +10,12 @@ export const ACCEPTED_EXTENSIONS = ["PNG", "JPG", "JPEG", "WebP"];
 export const MAX_UPLOAD_SIZE =
   parseInt(process.env.MAX_UPLOAD_SIZE || "52428800", 10) || 52428800;
 
+// Background removal on larger images runs out of memory on Vercel (it
+// failed at ~8.7MP and succeeded at ~5.9MP), so inputs are scaled down to
+// this many pixels first.
+export const MAX_PROCESSING_PIXELS =
+  parseInt(process.env.MAX_PROCESSING_PIXELS || "5000000", 10) || 5000000;
+
 // Vercel rejects function request and response bodies over 4.5MB. Images and
 // results larger than this travel through Vercel Blob instead (leaving
 // headroom for multipart overhead).

@@ -6,7 +6,11 @@ import {
   isTransferBlobUrl,
   takeUploadedImage,
 } from "@/lib/blob-transfer";
-import { ACCEPTED_MIME_TYPES, MAX_UPLOAD_SIZE } from "@/lib/constants";
+import {
+  ACCEPTED_MIME_TYPES,
+  MAX_PROCESSING_PIXELS,
+  MAX_UPLOAD_SIZE,
+} from "@/lib/constants";
 
 // The default (BiRefNet) provider loads a large ONNX session on first use,
 // which can take upwards of a minute on top of inference time.
@@ -51,7 +55,17 @@ export async function POST(request: NextRequest) {
     // Phone photos carry an EXIF orientation tag rather than rotated pixels;
     // .rotate() bakes that rotation in so the processed result matches what
     // the browser displays for the original file.
-    const imageBuffer = await sharp(Buffer.from(arrayBuffer)).rotate().toBuffer();
+    const image = sharp(Buffer.from(arrayBuffer)).rotate();
+    // Full-resolution phone photos (12MP+) exhaust the function's memory
+    // and get the process killed, so larger images are scaled down first.
+    const { width = 0, height = 0 } = await image.metadata();
+    const scale = Math.sqrt(MAX_PROCESSING_PIXELS / (width * height));
+    if (scale < 1) {
+      // A square box keeps this independent of the EXIF rotation.
+      const side = Math.floor(Math.max(width, height) * scale);
+      image.resize(side, side, { fit: "inside" });
+    }
+    const imageBuffer = await image.toBuffer();
 
     const result = await removeBackground({
       imageBuffer,
